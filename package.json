@@ -1,0 +1,27 @@
+{
+  "name": "@nearform/trace-events-parser",
+  "version": "0.0.0",
+  "description": "Fast streaming parser for Node.js trace events",
+  "main": "index.js",
+  "scripts": {
+    "test": "standard && tape test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nearform/node-trace-events-parser.git"
+  },
+  "keywords": [
+    "trace",
+    "events"
+  ],
+  "author": "Mathias Buus (@mafintosh)",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/nearform/node-trace-events-parser/issues"
+  },
+  "homepage": "https://github.com/nearform/node-trace-events-parser#readme",
+  "devDependencies": {
+    "standard": "^11.0.1",
+    "tape": "^4.9.1"
+  }
+}
