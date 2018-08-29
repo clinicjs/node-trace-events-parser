@@ -39,7 +39,7 @@ class Parser extends Transform {
   }
 
   _flush (cb) {
-    const msg = JSON.parse(this._buffer.slice(0, this._buffer.indexOf('}}') + 2))
+    const msg = JSON.parse(this._buffer.slice(0, this._buffer.lastIndexOf('}}') + 2))
     this.push(msg)
     cb(null)
   }
