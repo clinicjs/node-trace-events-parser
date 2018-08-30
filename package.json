@@ -23,5 +23,8 @@
   "devDependencies": {
     "standard": "^11.0.1",
     "tape": "^4.9.1"
+  },
+  "dependencies": {
+    "turbo-json-parse": "^2.2.0"
   }
 }

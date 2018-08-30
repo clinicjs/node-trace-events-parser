@@ -1,10 +1,25 @@
 const tape = require('tape')
 const parser = require('./')
 
+function sample () {
+  return {
+    pid: 42,
+    tid: Date.now(),
+    name: Math.random().toString(),
+    args: {
+      executionAsyncId: Date.now()
+    }
+  }
+}
+
+function stringify (samples) {
+  return JSON.stringify({traceEvents: samples})
+}
+
 tape('basic nested', function (t) {
   const parse = parser()
-  const expected = [{ a: true, b: {} }, { a: false, b: { c: {} } }]
-  const testData = '{"traceEvents":[{"a":true,"b":{}},{"a":false,"b":{"c":{}}}]}'
+  const expected = [sample(), sample()]
+  const testData = stringify(expected)
   parse.write(testData)
   parse.end()
 
@@ -20,8 +35,9 @@ tape('basic nested', function (t) {
 
 tape('chunked nested', function (t) {
   const parse = parser()
-  const expected = [{ a: true, b: {} }, { a: false, b: { c: {} } }]
-  const testData = '{"traceEvents":[{"a":true,"b":{}},{"a":false,"b":{"c":{}}}]}'
+  const expected = [sample(), sample()]
+  const testData = stringify(expected)
+
   for (var i = 0; i < testData.length; i++) {
     parse.write(testData.slice(i, i + 1))
   }
@@ -39,9 +55,9 @@ tape('chunked nested', function (t) {
 
 tape('basic', function (t) {
   const parse = parser()
-  const expected = [{ a: true, b: {} }, { a: false, b: {} }]
+  const expected = [sample(), sample()]
 
-  parse.write('{"traceEvents":[{"a":true,"b":{}},{"a":false,"b":{}}]}')
+  parse.write(stringify(expected))
   parse.end()
 
   parse
@@ -56,8 +72,8 @@ tape('basic', function (t) {
 
 tape('chunked', function (t) {
   const parse = parser()
-  const expected = [{ a: true, b: {} }, { a: false, b: {} }]
-  const s = '{"traceEvents":[{"a":true,"b":{}},{"a":false,"b":{}}]}'
+  const expected = [sample(), sample()]
+  const s = stringify(expected)
 
   for (var i = 0; i < s.length; i++) {
     parse.write(s.slice(i, i + 1))
