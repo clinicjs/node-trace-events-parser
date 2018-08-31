@@ -32,9 +32,17 @@ class Parser extends Transform {
     } else {
       parse.pointer = 0
       while (parse.pointer < last) {
-        const msg = parse(str, parse.pointer)
-        parse.pointer++
-        this.push(msg)
+        try {
+          const msg = parse(str, parse.pointer)
+          parse.pointer++
+          this.push(msg)
+        } catch (err) {
+          const rem = '[' + str.slice(parse.pointer, last + 2) + ']'
+          for (const msg of JSON.parse(rem)) {
+            this.push(msg)
+          }
+          parse.pointer = last + 3
+        }
       }
       this._buffer = str.slice(parse.pointer)
     }
@@ -43,8 +51,14 @@ class Parser extends Transform {
   }
 
   _flush (cb) {
-    const msg = parse(this._buffer.slice(0, this._buffer.lastIndexOf('}}') + 2))
-    this.push(msg)
+    try {
+      const msg = parse(this._buffer.slice(0, this._buffer.lastIndexOf('}}') + 2))
+      this.push(msg)
+    } catch (err) {
+    console.log(this._buffer)
+      const msg = JSON.parse(this._buffer.slice(0, this._buffer.lastIndexOf('}}') + 2))
+      this.push(msg)
+    }
     cb(null)
   }
 }

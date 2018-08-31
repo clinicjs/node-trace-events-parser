@@ -28,8 +28,8 @@ module.exports = turbo({
   // we trust the input so no need for fullMatch and validate
   // also none of the strings have escaped props, so we can
   // disable string escaping as well for a nice boost
-  fullMatch: false,
-  validate: false,
+  // fullMatch: false,
+  // validate: false,
   unescapeStrings: false,
   defaults: false
 })
