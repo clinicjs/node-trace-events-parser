@@ -55,7 +55,6 @@ class Parser extends Transform {
       const msg = parse(this._buffer.slice(0, this._buffer.lastIndexOf('}}') + 2))
       this.push(msg)
     } catch (err) {
-    console.log(this._buffer)
       const msg = JSON.parse(this._buffer.slice(0, this._buffer.lastIndexOf('}}') + 2))
       this.push(msg)
     }
