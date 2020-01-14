@@ -37,11 +37,16 @@ class Parser extends Transform {
           parse.pointer++
           this.push(msg)
         } catch (err) {
-          const rem = '[' + str.slice(parse.pointer, last + 2) + ']'
-          for (const msg of JSON.parse(rem)) {
-            this.push(msg)
+          try {
+            const rem = '[' + str.slice(parse.pointer, last + 2) + ']'
+            for (const msg of JSON.parse(rem)) {
+              this.push(msg)
+            }
+            parse.pointer = last + 3
+          } catch (err) {
+            cb(err)
+            return
           }
-          parse.pointer = last + 3
         }
       }
       this._buffer = str.slice(parse.pointer)
