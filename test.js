@@ -89,3 +89,26 @@ tape('chunked', function (t) {
       t.end()
     })
 })
+
+tape('invalid json', function (t) {
+  t.plan(2)
+  const parse = parser()
+  const expected = [sample()]
+  const s = '{"traceEvents":[' + JSON.stringify(expected[0]) + ', {"x":"x"]}},]}'
+
+  for (var i = 0; i < s.length; i++) {
+    parse.write(s.slice(i, i + 1))
+  }
+  parse.end()
+
+  parse
+    .on('data', function (data) {
+      t.same(data, expected.shift())
+    })
+    .on('error', function (error) {
+      t.ok(error)
+    })
+    .on('end', function () {
+      t.fail()
+    })
+})
