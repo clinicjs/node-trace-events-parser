@@ -8,7 +8,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nearform/node-trace-events-parser.git"
+    "url": "git+https://github.com/clinicjs/node-trace-events-parser.git"
   },
   "keywords": [
     "trace",
@@ -17,9 +17,9 @@
   "author": "Mathias Buus (@mafintosh)",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/nearform/node-trace-events-parser/issues"
+    "url": "https://github.com/clinicjs/node-trace-events-parser/issues"
   },
-  "homepage": "https://github.com/nearform/node-trace-events-parser#readme",
+  "homepage": "https://github.com/clinicjs/node-trace-events-parser#readme",
   "devDependencies": {
     "standard": "^11.0.1",
     "tape": "^4.9.1"
