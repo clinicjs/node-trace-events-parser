@@ -1,5 +1,5 @@
 {
-  "name": "@nearform/trace-events-parser",
+  "name": "@clinic/trace-events-parser",
   "version": "1.0.4",
   "description": "Fast streaming parser for Node.js trace events",
   "main": "index.js",
