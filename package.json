@@ -8,7 +8,8 @@
   },
   "scripts": {
     "test": "eslint . && node --test",
-    "test:coverage": "eslint . && node --test --experimental-test-coverage"
+    "test:coverage": "eslint . && node --test --experimental-test-coverage",
+    "benchmark": "node benchmark.mjs"
   },
   "repository": {
     "type": "git",
@@ -26,7 +27,8 @@
   "homepage": "https://github.com/clinicjs/node-trace-events-parser#readme",
   "devDependencies": {
     "eslint": "^10.0.0",
-    "neostandard": "^0.14.1"
+    "neostandard": "^0.14.1",
+    "tinybench": "^6.2.3"
   },
   "overrides": {
     "minimatch": "^11.0.0"
