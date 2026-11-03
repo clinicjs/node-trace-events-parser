@@ -3,8 +3,12 @@
   "version": "2.0.0",
   "description": "Fast streaming parser for Node.js trace events",
   "main": "index.js",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "test": "standard && tape test.js"
+    "test": "standard && node --test",
+    "test:coverage": "node --test --experimental-test-coverage"
   },
   "repository": {
     "type": "git",
@@ -21,8 +25,7 @@
   },
   "homepage": "https://github.com/clinicjs/node-trace-events-parser#readme",
   "devDependencies": {
-    "standard": "^11.0.1",
-    "tape": "^4.9.1"
+    "standard": "^11.0.1"
   },
   "dependencies": {
     "turbo-json-parse": "^2.2.0"
