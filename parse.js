@@ -4,23 +4,23 @@ module.exports = turbo({
   type: 'object',
   ordered: true,
   properties: {
-    pid: {type: 'number'},
-    tid: {type: 'number'},
-    ts: {type: 'number'},
-    tts: {type: 'number'},
-    ph: {type: 'string'},
-    cat: {type: 'string'},
-    name: {type: 'string'},
-    dur: {type: 'number'},
-    tdur: {type: 'number'},
-    id: {type: 'string'},
+    pid: { type: 'number' },
+    tid: { type: 'number' },
+    ts: { type: 'number' },
+    tts: { type: 'number' },
+    ph: { type: 'string' },
+    cat: { type: 'string' },
+    name: { type: 'string' },
+    dur: { type: 'number' },
+    tdur: { type: 'number' },
+    id: { type: 'string' },
     args: {
       type: 'object',
       properties: {
-        node: {type: 'string'},
-        name: {type: 'string'},
-        executionAsyncId: {type: 'number'},
-        triggerAsyncId: {type: 'number'}
+        node: { type: 'string' },
+        name: { type: 'string' },
+        executionAsyncId: { type: 'number' },
+        triggerAsyncId: { type: 'number' }
       }
     }
   }

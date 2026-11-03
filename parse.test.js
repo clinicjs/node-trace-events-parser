@@ -24,7 +24,7 @@ function sampleWithUnsupportedProperty () {
 }
 
 function stringify (samples) {
-  return JSON.stringify({traceEvents: samples})
+  return JSON.stringify({ traceEvents: samples })
 }
 
 async function parseSamples (t, input, expected) {
@@ -91,4 +91,3 @@ test('uses JSON fallback for the final event', async function (t) {
   const remaining = await parseSamples(t, stringify(expected.slice()), expected)
   t.assert.strictEqual(remaining, 0)
 })
-

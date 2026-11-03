@@ -7,8 +7,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "standard && node --test",
-    "test:coverage": "node --test --experimental-test-coverage"
+    "test": "eslint . && node --test",
+    "test:coverage": "eslint . && node --test --experimental-test-coverage"
   },
   "repository": {
     "type": "git",
@@ -25,7 +25,8 @@
   },
   "homepage": "https://github.com/clinicjs/node-trace-events-parser#readme",
   "devDependencies": {
-    "standard": "^11.0.1"
+    "eslint": "^10.0.0",
+    "neostandard": "^0.14.1"
   },
   "dependencies": {
     "turbo-json-parse": "^2.2.0"
