@@ -20,11 +20,12 @@ fs.createReadStream('node_trace.log')
 ```
 
 You can also use JSONStream to parse trace events, but
-this uses a specialised parser to achive a much higher throughput.
+this only has to find the event boundaries and hands each event to `JSON.parse`
+to achieve a much higher throughput.
 
 ## Benchmark
 
-Run the parser benchmark against `JSON.parse` with:
+Compare the streaming parser with per-event and whole-document `JSON.parse` using:
 
 ```sh
 npm run benchmark
@@ -32,6 +33,8 @@ npm run benchmark
 
 By default, it parses 10,000 generated events and runs each benchmark for one
 second. Set `EVENT_COUNT` or `BENCH_TIME` (milliseconds) to change those values.
+Each case runs twice: with only the common event fields, and with the nested
+`args.data` objects that `async_hooks` traces contain.
 
 ## License
 

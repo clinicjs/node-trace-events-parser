@@ -78,14 +78,14 @@ test('chunked', async function (t) {
   t.assert.strictEqual(remaining, 0)
 })
 
-test('uses JSON fallback for an event before a delimiter', async function (t) {
+test('retains unsupported properties for an event before a delimiter', async function (t) {
   t.plan(3)
   const expected = [sampleWithUnsupportedProperty(), sample()]
   const remaining = await parseSamples(t, stringify(expected.slice()), expected)
   t.assert.strictEqual(remaining, 0)
 })
 
-test('uses JSON fallback for the final event', async function (t) {
+test('retains unsupported properties for the final event', async function (t) {
   t.plan(2)
   const expected = [sampleWithUnsupportedProperty()]
   const remaining = await parseSamples(t, stringify(expected.slice()), expected)
@@ -170,7 +170,11 @@ test('rejects incomplete or malformed trace documents', async function (t) {
     '{"traceEvents":[\u00a0{"name":"event"}]}',
     '{"traceEvents":[]x}',
     '{"traceEvents":[,]}',
-    '{"traceEvents":[{"name":"one"},]}'
+    '{"traceEvents":[{"name":"one"},]}',
+    '{"traceEvents":[{"pid":}]}',
+    '{"traceEvents":[{"pid":01}]}',
+    '{"traceEvents":[{"pid":1 "tid":2}]}',
+    '{"traceEvents":[{"name":"raw\nnewline"}]}'
   ]
 
   for (const input of inputs) {
