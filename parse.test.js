@@ -125,6 +125,12 @@ test('preserves multi-byte UTF-8 characters split across Buffer chunks', async f
   t.assert.strictEqual(remaining, 0)
 })
 
+test('scans input chunks larger than one mebibyte in bounded pieces', async function (t) {
+  const expected = [{ name: 'large', args: { payload: 'x'.repeat(1024 * 1024) } }]
+  const remaining = await parseSamples(t, stringify(expected.slice()), expected)
+  t.assert.strictEqual(remaining, 0)
+})
+
 test('replaces invalid UTF-8 bytes when decoding trace events', async function (t) {
   t.plan(2)
   const expected = [{ name: 'f�oo', args: { executionAsyncId: 1 } }]
@@ -188,6 +194,41 @@ test('rejects incomplete or malformed trace documents', async function (t) {
     parse.end(input)
     t.assert.ok(await result instanceof Error, `expected an error for ${input}`)
   }
+})
+
+test('rejects content after the closing trace document object', async function (t) {
+  const inputs = [
+    ['{"traceEvents":[]}]'],
+    ['{"traceEvents":[]}]]'],
+    ['{"traceEvents":[{"name":"one"}]}]'],
+    ['{"traceEvents":[{"name":"one"}]}', ']'],
+    ['{"traceEvents":[]} \n]'],
+    ['{"traceEvents":[]}x'],
+    ['{"traceEvents":[]},'],
+    ['{"traceEvents":[]}}']
+  ]
+
+  for (const chunks of inputs) {
+    const parse = parser()
+    const result = new Promise((resolve) => {
+      parse.on('data', function () {})
+      parse.once('error', resolve)
+      parse.once('end', () => resolve(null))
+    })
+
+    for (const chunk of chunks) parse.write(chunk)
+    parse.end()
+    const error = await result
+    t.assert.ok(error instanceof SyntaxError, `expected an error for ${chunks.join('')}`)
+    t.assert.match(error.message, /Unexpected content after trace document/)
+  }
+})
+
+test('accepts whitespace after the closing trace document object', async function (t) {
+  t.plan(2)
+  const expected = [{ name: 'one' }]
+  const remaining = await parseSamples(t, '{"traceEvents":[{"name":"one"}]} \r\n\t', expected)
+  t.assert.strictEqual(remaining, 0)
 })
 
 test('accepts whitespace between trace events and document delimiters', async function (t) {

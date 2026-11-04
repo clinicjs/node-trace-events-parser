@@ -1,11 +1,83 @@
 const { Transform } = require('stream')
 const TRACE_EVENTS_PREFIX_LENGTH = '{"traceEvents":['.length
+// Longest string given to one consumeEvents call; larger chunks are scanned in slices.
+const MAX_SCAN_CHUNK_LENGTH = 1024 * 1024
 const AFTER_EVENT = 1
 const AFTER_COMMA = 2
 const ARRAY_CLOSED = 4
 const OBJECT_CLOSED = 8
 const IN_STRING = 1
 const ESCAPED = 2
+const OUTSIDE_WHITESPACE = 1
+const OUTSIDE_COMMA = 2
+const OUTSIDE_ARRAY_CLOSE = 3
+const OUTSIDE_OBJECT_CLOSE = 4
+const OUTSIDE_ACTION = new Uint8Array(128)
+const OUTSIDE_TRANSITIONS = new Uint8Array(16 * 8)
+const OUTSIDE_ERRORS = [
+  'Unexpected content after trace document',
+  'Expected closing trace document object',
+  'Unexpected comma between trace events',
+  'Unexpected trailing comma in trace events',
+  'Unexpected content in trace events'
+]
+const ERROR_AFTER_DOCUMENT = 16
+const ERROR_EXPECT_DOCUMENT_CLOSE = 17
+const ERROR_COMMA = 18
+const ERROR_TRAILING_COMMA = 19
+const ERROR_CONTENT = 20
+OUTSIDE_ACTION[9] = OUTSIDE_WHITESPACE
+OUTSIDE_ACTION[10] = OUTSIDE_WHITESPACE
+OUTSIDE_ACTION[13] = OUTSIDE_WHITESPACE
+OUTSIDE_ACTION[32] = OUTSIDE_WHITESPACE
+OUTSIDE_ACTION[44] = OUTSIDE_COMMA
+OUTSIDE_ACTION[93] = OUTSIDE_ARRAY_CLOSE
+OUTSIDE_ACTION[125] = OUTSIDE_OBJECT_CLOSE
+
+for (let documentState = 0; documentState < 16; documentState++) {
+  for (let action = 0; action < 5; action++) {
+    let nextState
+    if (action === OUTSIDE_WHITESPACE) nextState = documentState
+    else if (documentState & OBJECT_CLOSED) nextState = ERROR_AFTER_DOCUMENT
+    else if (action === OUTSIDE_COMMA) {
+      if (documentState === AFTER_EVENT) nextState = AFTER_COMMA
+      else if (documentState === ARRAY_CLOSED || documentState === (ARRAY_CLOSED | AFTER_EVENT)) {
+        nextState = ERROR_EXPECT_DOCUMENT_CLOSE
+      } else nextState = ERROR_COMMA
+    } else if (action === OUTSIDE_ARRAY_CLOSE) {
+      if (documentState === AFTER_COMMA) nextState = ERROR_TRAILING_COMMA
+      else if (documentState === ARRAY_CLOSED || documentState === (ARRAY_CLOSED | AFTER_EVENT)) {
+        nextState = ERROR_EXPECT_DOCUMENT_CLOSE
+      } else nextState = documentState | ARRAY_CLOSED
+    } else if (action === OUTSIDE_OBJECT_CLOSE) {
+      if (documentState === ARRAY_CLOSED || documentState === (ARRAY_CLOSED | AFTER_EVENT)) {
+        nextState = ARRAY_CLOSED | OBJECT_CLOSED
+      } else nextState = ERROR_CONTENT
+    } else if (documentState === ARRAY_CLOSED || documentState === (ARRAY_CLOSED | AFTER_EVENT)) {
+      nextState = ERROR_EXPECT_DOCUMENT_CLOSE
+    } else nextState = ERROR_CONTENT
+
+    OUTSIDE_TRANSITIONS[(documentState << 3) | action] = nextState
+  }
+}
+
+/**
+ * Parse and emit an event that has reached its closing brace.
+ *
+ * @param {string} input Current input fragment.
+ * @param {number} start Start offset in the current fragment.
+ * @param {number} end Exclusive end offset in the current fragment.
+ * @param {string[]} parts Fragments retained from previous chunks.
+ * @param {Parser} parser Stream receiving the parsed event.
+ * @returns {void}
+ */
+function emitEvent (input, start, end, parts, parser) {
+  let prefix = ''
+  for (let i = 0; i < parts.length; i++) prefix += parts[i]
+  const event = prefix + input.slice(start, end)
+  parser.push(JSON.parse(event))
+  parts.length = 0
+}
 
 /**
  * Find the byte offset before a trailing, incomplete UTF-8 sequence.
@@ -36,14 +108,15 @@ function completeUtf8Length (buffer) {
  *
  * @param {string} input New trace-event text to scan.
  * @param {Parser} parser Stream that receives parsed events.
- * @param {object} eventState Scanner state for an event spanning chunks.
+ * @param {string[]} parts Text fragments retained from previous chunks.
  * @returns {void}
  */
-function consumeEvents (input, parser, state, parts) {
-  let documentState = state[0]
-  let depth = state[1]
-  let flags = state[2]
+function consumeEvents (input, parser, parts) {
+  let documentState = parser._jsonState
+  let depth = parser._scanDepth
+  let flags = parser._scanFlags
   let start = depth > 0 ? 0 : -1
+  parser._pendingStart = start
 
   for (let i = 0; i < input.length; i++) {
     const code = input.charCodeAt(i)
@@ -55,62 +128,53 @@ function consumeEvents (input, parser, state, parts) {
         }
         start = i
         depth = 1
+        parser._scanDepth = depth
+        parser._pendingStart = start
         continue
       }
 
-      if (code === 32 || code === 10 || code === 13 || code === 9) continue
-      if (documentState & OBJECT_CLOSED) throw new SyntaxError('Unexpected content after trace document')
-      if (documentState & ARRAY_CLOSED) {
-        if (code !== 125) throw new SyntaxError('Expected closing trace document object')
-        documentState |= OBJECT_CLOSED
-        continue
+      const action = code < OUTSIDE_ACTION.length ? OUTSIDE_ACTION[code] : 0
+      const nextState = OUTSIDE_TRANSITIONS[(documentState << 3) | action]
+      if (nextState >= ERROR_AFTER_DOCUMENT) {
+        throw new SyntaxError(OUTSIDE_ERRORS[nextState - ERROR_AFTER_DOCUMENT])
       }
-
-      if (code === 44) {
-        if (!(documentState & AFTER_EVENT)) throw new SyntaxError('Unexpected comma between trace events')
-        documentState = (documentState & ~AFTER_EVENT) | AFTER_COMMA
-        continue
-      }
-
-      if (code === 93) {
-        if (documentState & AFTER_COMMA) throw new SyntaxError('Unexpected trailing comma in trace events')
-        documentState |= ARRAY_CLOSED
-        continue
-      }
-
-      throw new SyntaxError('Unexpected content in trace events')
-    }
-
-    if (flags & IN_STRING) {
-      if (flags & ESCAPED) flags &= ~ESCAPED
-      else if (code === 92) flags |= ESCAPED
-      else if (code === 34) flags &= ~IN_STRING
+      documentState = nextState
+      if (action !== OUTSIDE_WHITESPACE) parser._jsonState = documentState
       continue
     }
 
-    if (code === 34) flags |= IN_STRING
-    else if (code === 123) depth++
-    else if (code === 125 && --depth === 0) {
-      const event = parts[0] !== ''
-        ? parts.join('') + input.slice(start, i + 1)
-        : input.slice(start, i + 1)
-      parser.push(JSON.parse(event))
-      parts.length = 1
-      parts[0] = ''
-      start = -1
-      documentState = (documentState | AFTER_EVENT) & ~AFTER_COMMA
+    if (flags & IN_STRING) {
+      if (flags & ESCAPED) {
+        flags &= ~ESCAPED
+        parser._scanFlags = flags
+      } else if (code === 92) {
+        flags |= ESCAPED
+        parser._scanFlags = flags
+      } else if (code === 34) {
+        flags &= ~IN_STRING
+        parser._scanFlags = flags
+      }
+      continue
+    }
+
+    if (code === 34) {
+      flags |= IN_STRING
+      parser._scanFlags = flags
+    } else if (code === 123) {
+      depth++
+      parser._scanDepth = depth
+    } else if (code === 125) {
+      depth--
+      parser._scanDepth = depth
+      if (depth === 0) {
+        emitEvent(input, start, i + 1, parts, parser)
+        parser._pendingStart = -1
+        start = -1
+        documentState = (documentState | AFTER_EVENT) & ~AFTER_COMMA
+        parser._jsonState = documentState
+      }
     }
   }
-
-  if (start !== -1 && start < input.length) {
-    const part = input.slice(start)
-    if (parts[0] === '') parts[0] = part
-    else parts.push(part)
-  }
-
-  state[0] = documentState
-  state[1] = depth
-  state[2] = flags
 }
 
 /**
@@ -189,10 +253,21 @@ class Parser extends Transform {
     this._skip = TRACE_EVENTS_PREFIX_LENGTH
     /** @type {Buffer} Incomplete UTF-8 bytes carried over from the previous chunk. */
     this._utf8Buffer = Buffer.alloc(0)
-    /** @type {string[]} Text fragments for an event spanning chunks. */
+    /**
+     * Text fragments for an event spanning chunks. Seeded with a string so the
+     * array never changes elements kind, which would deoptimize `emitEvent`.
+     *
+     * @type {string[]}
+     */
     this._eventParts = ['']
-    /** @type {Int32Array} Document flags, object depth and string flags. */
-    this._scanState = new Int32Array(3)
+    /** @type {number} Document structure flags. */
+    this._jsonState = 0
+    /** @type {number} Open object depth in the current event. */
+    this._scanDepth = 0
+    /** @type {number} String and escape flags in the current event. */
+    this._scanFlags = 0
+    /** @type {number} Start of a pending event in the current chunk. */
+    this._pendingStart = -1
   }
 
   /**
@@ -220,7 +295,14 @@ class Parser extends Transform {
     this._utf8Buffer = combined.subarray(completeLength)
     const decoded = combined.subarray(0, completeLength).toString()
     try {
-      consumeEvents(decoded, this, this._scanState, this._eventParts)
+      let offset = 0
+      while (offset < decoded.length) {
+        const end = Math.min(offset + MAX_SCAN_CHUNK_LENGTH, decoded.length)
+        const input = offset === 0 && end === decoded.length ? decoded : decoded.slice(offset, end)
+        consumeEvents(input, this, this._eventParts)
+        if (this._scanDepth > 0) this._eventParts.push(input.slice(this._pendingStart))
+        offset = end
+      }
     } catch (err) {
       return cb(err)
     }
@@ -235,10 +317,10 @@ class Parser extends Transform {
    * @returns {void}
    */
   _flush (cb) {
-    if (this._utf8Buffer.length || this._scanState[1] > 0) {
+    if (this._utf8Buffer.length || this._scanDepth > 0) {
       return cb(new SyntaxError('Incomplete trace event'))
     }
-    if (!(this._scanState[0] & OBJECT_CLOSED)) return cb(new SyntaxError('Incomplete trace document'))
+    if (!(this._jsonState & OBJECT_CLOSED)) return cb(new SyntaxError('Incomplete trace document'))
     cb(null)
   }
 }
