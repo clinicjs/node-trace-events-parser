@@ -196,6 +196,15 @@ test('rejects incomplete or malformed trace documents', async function (t) {
   }
 })
 
+test('emits an error for malformed JSON after a valid event', async function (t) {
+  const expected = { name: 'valid' }
+  const input = '{"traceEvents":[' + JSON.stringify(expected) + ', {"x":"x"]}},]}'
+  const { events, error } = await collect(Array.from(input, char => char))
+
+  t.assert.deepStrictEqual(events, [expected])
+  t.assert.ok(error instanceof SyntaxError)
+})
+
 test('rejects content after the closing trace document object', async function (t) {
   const inputs = [
     ['{"traceEvents":[]}]'],
