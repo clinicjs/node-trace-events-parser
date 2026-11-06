@@ -2,7 +2,15 @@ name: CI
 
 on:
   push:
+    branches:
+     - main
+     - next
+     - 'v*'
+    paths-ignore:
+      - '*.md'
   pull_request:
+    paths-ignore:
+      - '*.md'
 
 permissions:
   contents: read
