@@ -1,7 +1,13 @@
-const { Transform } = require('stream')
+const { Transform } = require('node:stream')
+
 const TRACE_EVENTS_PREFIX_LENGTH = '{"traceEvents":['.length
 // Longest string given to one consumeEvents call; larger chunks are scanned in slices.
 const MAX_SCAN_CHUNK_LENGTH = 1024 * 1024
+// Node.js writes events with no whitespace between them, so this finds event
+// boundaries without scanning. It can also match inside an event; see consumeChunk.
+const EVENT_SEPARATOR = '},{'
+// Consecutive chunks that may fail to batch before a stream only scans.
+const MAX_BATCH_FAILURES = 4
 const AFTER_EVENT = 1
 const AFTER_COMMA = 2
 const ARRAY_CLOSED = 4
@@ -14,13 +20,13 @@ const OUTSIDE_ARRAY_CLOSE = 3
 const OUTSIDE_OBJECT_CLOSE = 4
 const OUTSIDE_ACTION = new Uint8Array(128)
 const OUTSIDE_TRANSITIONS = new Uint8Array(16 * 8)
-const OUTSIDE_ERRORS = [
+const OUTSIDE_ERRORS = /** @type {const} */ ([
   'Unexpected content after trace document',
   'Expected closing trace document object',
   'Unexpected comma between trace events',
   'Unexpected trailing comma in trace events',
   'Unexpected content in trace events'
-]
+])
 const ERROR_AFTER_DOCUMENT = 16
 const ERROR_EXPECT_DOCUMENT_CLOSE = 17
 const ERROR_COMMA = 18
@@ -116,7 +122,6 @@ function consumeEvents (input, parser, parts) {
   let depth = parser._scanDepth
   let flags = parser._scanFlags
   let start = depth > 0 ? 0 : -1
-  parser._pendingStart = start
 
   for (let i = 0; i < input.length; i++) {
     const code = input.charCodeAt(i)
@@ -128,8 +133,6 @@ function consumeEvents (input, parser, parts) {
         }
         start = i
         depth = 1
-        parser._scanDepth = depth
-        parser._pendingStart = start
         continue
       }
 
@@ -139,42 +142,106 @@ function consumeEvents (input, parser, parts) {
         throw new SyntaxError(OUTSIDE_ERRORS[nextState - ERROR_AFTER_DOCUMENT])
       }
       documentState = nextState
-      if (action !== OUTSIDE_WHITESPACE) parser._jsonState = documentState
       continue
     }
 
     if (flags & IN_STRING) {
       if (flags & ESCAPED) {
         flags &= ~ESCAPED
-        parser._scanFlags = flags
       } else if (code === 92) {
         flags |= ESCAPED
-        parser._scanFlags = flags
       } else if (code === 34) {
         flags &= ~IN_STRING
-        parser._scanFlags = flags
       }
       continue
     }
 
     if (code === 34) {
       flags |= IN_STRING
-      parser._scanFlags = flags
     } else if (code === 123) {
       depth++
-      parser._scanDepth = depth
     } else if (code === 125) {
       depth--
-      parser._scanDepth = depth
       if (depth === 0) {
         emitEvent(input, start, i + 1, parts, parser)
-        parser._pendingStart = -1
         start = -1
         documentState = (documentState | AFTER_EVENT) & ~AFTER_COMMA
-        parser._jsonState = documentState
       }
     }
   }
+
+  parser._jsonState = documentState
+  parser._scanDepth = depth
+  parser._scanFlags = flags
+  parser._pendingStart = start
+}
+
+/**
+ * Scan a fragment one event at a time, retaining any incomplete event.
+ *
+ * @param {string} input Trace-event text to scan.
+ * @param {Parser} parser Stream that receives parsed events.
+ * @returns {void}
+ */
+function scanEvents (input, parser) {
+  consumeEvents(input, parser, parser._eventParts)
+  if (parser._scanDepth > 0) parser._eventParts.push(input.slice(parser._pendingStart))
+}
+
+/**
+ * Parse comma-separated events in one `JSON.parse` call.
+ *
+ * @param {string} text Text expected to hold complete, comma-separated events.
+ * @returns {TraceEvent[]|null} The events, or null if the text is anything else.
+ */
+function parseBatch (text) {
+  let events
+  try {
+    events = JSON.parse('[' + text + ']')
+  } catch {
+    return null
+  }
+
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i]
+    if (typeof event !== 'object' || event === null || Array.isArray(event)) return null
+  }
+  return events
+}
+
+/**
+ * Parse a fragment, handing the events between its first and last separator to
+ * `JSON.parse` in one call instead of scanning for each event's boundaries.
+ *
+ * A separator may lie inside a string or an array, so a match proves nothing on
+ * its own. A batch that parses is still exact, as no valid JSON object is a
+ * proper prefix of another: the scanner would find the same events. Any other
+ * outcome rescans the text, which also reports errors exactly as scanning does.
+ *
+ * @param {string} input Trace-event text to parse.
+ * @param {Parser} parser Stream that receives parsed events.
+ * @returns {void}
+ */
+function consumeChunk (input, parser) {
+  const first = parser._batchFailures < MAX_BATCH_FAILURES ? input.indexOf(EVENT_SEPARATOR) : -1
+  const last = first === -1 ? -1 : input.lastIndexOf(EVENT_SEPARATOR)
+  if (first === last) return scanEvents(input, parser)
+
+  // Include the comma, leaving the batch to start at an opening brace.
+  const batchStart = first + 2
+  const batchEnd = last + 1
+  scanEvents(input.slice(0, batchStart), parser)
+
+  const events = parser._scanDepth === 0 ? parseBatch(input.slice(batchStart, batchEnd)) : null
+  if (events === null) {
+    parser._batchFailures++
+    return scanEvents(input.slice(batchStart), parser)
+  }
+
+  parser._batchFailures = 0
+  for (let i = 0; i < events.length; i++) parser.push(events[i])
+  parser._jsonState = AFTER_EVENT
+  scanEvents(input.slice(batchEnd), parser)
 }
 
 /**
@@ -268,6 +335,8 @@ class Parser extends Transform {
     this._scanFlags = 0
     /** @type {number} Start of a pending event in the current chunk. */
     this._pendingStart = -1
+    /** @type {number} Consecutive chunks that could not be parsed as a batch. */
+    this._batchFailures = 0
   }
 
   /**
@@ -299,8 +368,7 @@ class Parser extends Transform {
       while (offset < decoded.length) {
         const end = Math.min(offset + MAX_SCAN_CHUNK_LENGTH, decoded.length)
         const input = offset === 0 && end === decoded.length ? decoded : decoded.slice(offset, end)
-        consumeEvents(input, this, this._eventParts)
-        if (this._scanDepth > 0) this._eventParts.push(input.slice(this._pendingStart))
+        consumeChunk(input, this)
         offset = end
       }
     } catch (err) {

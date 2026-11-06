@@ -20,7 +20,7 @@ fs.createReadStream('node_trace.log')
 ```
 
 You can also use JSONStream to parse trace events, but
-this only has to find the event boundaries and hands each event to `JSON.parse`
+this only has to find the event boundaries and hands the events to `JSON.parse`
 to achieve a much higher throughput.
 
 ## Benchmark

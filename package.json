@@ -7,8 +7,10 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "eslint . && node --test",
-    "test:coverage": "eslint . && node --test --experimental-test-coverage",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage",
     "benchmark": "node benchmark.mjs"
   },
   "repository": {
